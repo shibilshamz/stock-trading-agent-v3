@@ -3,7 +3,6 @@
 __pycache__/
 *.pyc
 venv/
-data/
 *.log
 .DS_Store
 *.egg-info/
