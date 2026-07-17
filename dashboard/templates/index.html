@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading Agent Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>Trading Agent Dashboard</h1>
+    <div id="status-pill" class="status-pill status-idle">Idle</div>
+  </header>
+
+  <main>
+    <section id="control-panel" class="panel">
+      <h2>Run Configuration</h2>
+      <div class="form-grid">
+        <label>
+          Market
+          <select id="market-select"></select>
+        </label>
+
+        <label>
+          Strategy
+          <select id="strategy-select"></select>
+        </label>
+
+        <label>
+          Mode
+          <select id="mode-select"></select>
+        </label>
+
+        <label>
+          Symbols <span class="hint">(comma-separated; blank = auto universe)</span>
+          <input id="symbols-input" type="text" placeholder="RELIANCE.NS, TCS.NS" />
+        </label>
+
+        <label id="start-date-field" class="hidden">
+          Start Date
+          <input id="start-date-input" type="date" />
+        </label>
+
+        <label id="end-date-field" class="hidden">
+          End Date
+          <input id="end-date-input" type="date" />
+        </label>
+
+        <label id="replay-speed-field" class="hidden">
+          Replay Speed
+          <input id="replay-speed-input" type="number" min="0.1" step="0.1" value="1" />
+        </label>
+      </div>
+
+      <details id="parameters-details">
+        <summary>Strategy Parameters (JSON)</summary>
+        <textarea id="parameters-input" rows="8" spellcheck="false"></textarea>
+      </details>
+
+      <div class="button-row">
+        <button id="run-btn" class="btn btn-primary">Run</button>
+        <button id="kill-switch-btn" class="btn btn-danger" disabled>Kill Switch</button>
+      </div>
+
+      <p id="run-message" class="message"></p>
+    </section>
+
+    <section id="status-bar" class="panel">
+      <h2>Status</h2>
+      <div class="status-grid">
+        <div><span class="label">Run ID</span><span id="status-run-id" class="value">-</span></div>
+        <div><span class="label">Mode</span><span id="status-mode" class="value">-</span></div>
+        <div><span class="label">State</span><span id="status-state" class="value">-</span></div>
+        <div><span class="label">Market / Strategy</span><span id="status-market-strategy" class="value">-</span></div>
+        <div><span class="label">Symbols</span><span id="status-symbols" class="value">-</span></div>
+        <div><span class="label">Equity</span><span id="status-equity" class="value">-</span></div>
+        <div><span class="label">Open Positions</span><span id="status-open-positions" class="value">-</span></div>
+        <div><span class="label">Total Trades</span><span id="status-total-trades" class="value">-</span></div>
+        <div><span class="label">Win Rate</span><span id="status-win-rate" class="value">-</span></div>
+      </div>
+
+      <div id="replay-progress-wrap" class="hidden">
+        <div class="progress-bar">
+          <div id="replay-progress-fill" class="progress-fill" style="width: 0%"></div>
+        </div>
+        <p id="replay-progress-label" class="hint">0% - 0 / 0 bars</p>
+      </div>
+    </section>
+
+    <section id="positions" class="panel">
+      <h2>Open Positions</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Entry Price</th>
+            <th>Quantity</th>
+            <th>Stop Loss</th>
+            <th>Take Profit</th>
+            <th>Entry Time</th>
+          </tr>
+        </thead>
+        <tbody id="positions-body">
+          <tr class="empty-row"><td colspan="6">No open positions</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="trades" class="panel">
+      <h2>Closed Trades</h2>
+      <div class="filter-row">
+        <label>
+          From
+          <input id="trades-start-date" type="date" />
+        </label>
+        <label>
+          To
+          <input id="trades-end-date" type="date" />
+        </label>
+        <button id="trades-filter-btn" class="btn btn-secondary">Filter</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Strategy</th>
+            <th>Side</th>
+            <th>Entry</th>
+            <th>Exit</th>
+            <th>Qty</th>
+            <th>P&amp;L</th>
+            <th>P&amp;L %</th>
+            <th>Duration (min)</th>
+            <th>Exit Reason</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+          <tr class="empty-row"><td colspan="10">No trades yet</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="performance" class="panel">
+      <h2>Equity Curve</h2>
+      <canvas id="equity-chart" height="90"></canvas>
+    </section>
+
+    <section id="reports" class="panel">
+      <h2>Reports &amp; Backtest History</h2>
+      <div class="filter-row">
+        <label>
+          From
+          <input id="report-start-date" type="date" />
+        </label>
+        <label>
+          To
+          <input id="report-end-date" type="date" />
+        </label>
+        <button id="download-report-btn" class="btn btn-secondary">Download Trade Report (Excel)</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Run ID</th>
+            <th>Strategy</th>
+            <th>Market</th>
+            <th>Range</th>
+            <th>Trades</th>
+            <th>Win Rate</th>
+            <th>Net P&amp;L</th>
+            <th>Sharpe</th>
+            <th>Max DD</th>
+          </tr>
+        </thead>
+        <tbody id="backtest-results-body">
+          <tr class="empty-row"><td colspan="9">No backtests run yet</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

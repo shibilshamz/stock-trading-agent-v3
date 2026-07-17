@@ -3,3 +3,7 @@ numpy>=2.3.4
 yfinance>=0.2.66
 apscheduler>=3.11.3
 openpyxl>=3.1.5
+fastapi>=0.139.2
+uvicorn[standard]>=0.51.0
+pydantic>=2.13.4
+httpx>=0.28.1
