@@ -234,11 +234,24 @@ def _build_telegram_bot(secrets: Dict[str, Any], enabled: bool) -> Any:
         return None
 
 
+_notify_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
 def _notify(coro: Any) -> None:
     """Fire-and-forget a TelegramBot coroutine from synchronous code; alert
-    failures are logged, never allowed to crash the run."""
+    failures are logged, never allowed to crash the run.
+
+    Reuses one event loop across calls rather than asyncio.run()'s
+    create-a-loop-then-close-it-every-time: TelegramBot's underlying HTTP
+    client lazily binds internal resources to whichever loop first runs a
+    request, so a second asyncio.run() call (a new, different loop) breaks
+    with "Event loop is closed" on the very next notification.
+    """
+    global _notify_loop
     try:
-        asyncio.run(coro)
+        if _notify_loop is None or _notify_loop.is_closed():
+            _notify_loop = asyncio.new_event_loop()
+        _notify_loop.run_until_complete(coro)
     except Exception as exc:
         logger.warning("Telegram notification failed: %s", exc)
 
