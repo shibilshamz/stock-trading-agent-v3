@@ -70,10 +70,21 @@ class RunManager:
         "timeframe": "15m",
     }
 
-    def __init__(self, db_path: str = "data/trading_agent.db", cache: Any = None, config: Optional[dict] = None):
+    def __init__(
+        self,
+        db_path: str = "data/trading_agent.db",
+        cache: Any = None,
+        config: Optional[dict] = None,
+        risk_config: Optional[dict] = None,
+    ):
         self.db_path = db_path
         self.cache = cache if cache is not None else DataCache()
         self.config = {**self.DEFAULT_CONFIG, **(config or {})}
+        # Forwarded verbatim to ATRPositionSizing/CircuitBreakers -- both merge
+        # this over their own DEFAULT_CONFIG, so a caller (e.g. main.py reading
+        # config.yaml) can override risk limits without RunManager needing to
+        # know their individual key names.
+        self.risk_config = risk_config
         self._lock = threading.RLock()
         self._run: Optional[Dict[str, Any]] = None
         self._backtest_runner = BacktestRunner(db_path=db_path, cache=self.cache)
@@ -231,8 +242,10 @@ class RunManager:
             # only reads get_market_hours() (a fixed schedule, not time-sensitive
             # price data), so the real adapter is fine there in every mode.
             "risk_engines": [
-                ATRPositionSizing(market_adapter=replay_view if replay_view is not None else market),
-                CircuitBreakers(market_adapter=market),
+                ATRPositionSizing(
+                    config=self.risk_config, market_adapter=replay_view if replay_view is not None else market
+                ),
+                CircuitBreakers(config=self.risk_config, market_adapter=market),
             ],
             "parameters": parameters,
         }

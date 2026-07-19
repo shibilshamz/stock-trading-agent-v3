@@ -1,0 +1,19 @@
+default:
+  market: nse
+  strategy: orb_vwap
+  mode: paper
+  paper_balance: 50000
+  max_risk_per_trade_pct: 1.0
+  max_daily_loss_pct: 3.0
+  stop_loss_atr_mult: 1.5
+  take_profit_rr: 2.0
+  max_position_size_pct: 10.0
+  log_level: INFO
+  enable_ai_validation: true
+  enable_telegram_alerts: true
+  enable_dashboard: true
+
+dashboard:
+  host: 0.0.0.0
+  port: 8000
+  refresh_interval: 30
