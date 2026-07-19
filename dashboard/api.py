@@ -8,7 +8,10 @@ strategy.on_position_update) and persists positions/trades to SQLite using
 the same schema backtest_runner.py writes to.
 """
 
+import asyncio
 import json
+import logging
+import os
 import sqlite3
 import threading
 from datetime import datetime
@@ -16,12 +19,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from alerts.telegram_bot import TelegramBot
 from core.backtest_runner import BacktestRunner
 from core.registry import (
     data_feed_registry,
@@ -39,6 +44,51 @@ from risk.position_sizing import ATRPositionSizing
 
 DASHBOARD_DIR = Path(__file__).resolve().parent
 MODES = ["paper", "live", "historical_replay", "backtest"]
+
+logger = logging.getLogger("dashboard")
+
+_notify_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _build_telegram_bot() -> Optional[TelegramBot]:
+    """Constructs a TelegramBot from .env credentials, if present and enabled.
+
+    dashboard/api.py is runnable standalone (`uvicorn dashboard.api:app`),
+    not only via main.py's CLI, so it loads its own secrets here rather than
+    depending on main.py having already loaded them into some shared state
+    this module has no way to reach.
+    """
+    load_dotenv()
+    if os.environ.get("ENABLE_TELEGRAM_ALERTS", "true").strip().lower() not in ("1", "true", "yes"):
+        return None
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return None
+    try:
+        return TelegramBot(token=token, chat_id=chat_id)
+    except ValueError as exc:
+        logger.warning("Could not initialize Telegram bot: %s", exc)
+        return None
+
+
+def _notify(coro: Any) -> None:
+    """Fire-and-forget a TelegramBot coroutine from RunManager's synchronous
+    methods. Reuses one persistent event loop across calls rather than
+    asyncio.run()'s create-a-loop-then-close-it-every-time -- TelegramBot's
+    underlying HTTP client lazily binds internal resources to whichever loop
+    first runs a request, so a second asyncio.run() call (a new, different
+    loop) breaks with "Event loop is closed" on the next notification. Safe
+    to call from multiple RunManager methods since they're all already
+    serialized by RunManager's own lock.
+    """
+    global _notify_loop
+    try:
+        if _notify_loop is None or _notify_loop.is_closed():
+            _notify_loop = asyncio.new_event_loop()
+        _notify_loop.run_until_complete(coro)
+    except Exception as exc:
+        logger.warning("Telegram notification failed: %s", exc)
 
 
 class RunRequest(BaseModel):
@@ -85,6 +135,7 @@ class RunManager:
         # config.yaml) can override risk limits without RunManager needing to
         # know their individual key names.
         self.risk_config = risk_config
+        self.telegram_bot = _build_telegram_bot()
         self._lock = threading.RLock()
         self._run: Optional[Dict[str, Any]] = None
         self._backtest_runner = BacktestRunner(db_path=db_path, cache=self.cache)
@@ -120,6 +171,8 @@ class RunManager:
             run["status"] = "stopped"
             run["stopped_at"] = datetime.now().isoformat()
             self._finalize_strategy_run(run)
+            if self.telegram_bot is not None:
+                _notify(self.telegram_bot.send_kill_switch(run_id))
             return self._public_state()
 
     def get_status(self) -> Dict[str, Any]:
@@ -253,6 +306,9 @@ class RunManager:
 
         self._ensure_strategy_run_row(run)
         feed.subscribe(symbols, self._make_bar_callback(run_id))
+
+        if self.telegram_bot is not None:
+            _notify(self.telegram_bot.send_message(f"Started {request.mode} run: {run_id}"))
 
         return self._public_state()
 
