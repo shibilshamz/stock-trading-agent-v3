@@ -4,6 +4,7 @@ import random
 import uuid
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -21,6 +22,11 @@ class PaperFeed(DataFeed):
     DEFAULT_CONFIG = {
         "poll_minute": "0,15,30,45",
         "poll_hour": "9-15",
+        # NSE hours are inherently IST -- pinning the scheduler's timezone here
+        # keeps the poll window correct regardless of the server's own system
+        # timezone (e.g. a UTC-default VPS would otherwise poll during IST
+        # evening hours instead of the actual 09:15-15:30 IST session).
+        "timezone": "Asia/Kolkata",
         "timeframe": "15m",
         "slippage_pct": 0.001,
         "job_id": "paper_feed_poll",
@@ -38,7 +44,7 @@ class PaperFeed(DataFeed):
         self.portfolio: Dict[str, Any] = {"balance": paper_balance, "positions": {}}
         self.subscribed_symbols: List[str] = []
         self._callback: Optional[Callable[[Bar], None]] = None
-        self.scheduler = BackgroundScheduler()
+        self.scheduler = BackgroundScheduler(timezone=ZoneInfo(self.config["timezone"]))
 
     @property
     def mode(self) -> str:
