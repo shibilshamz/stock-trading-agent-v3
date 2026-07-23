@@ -140,7 +140,7 @@ class HistoricalReplayFeed(DataFeed):
         self, symbol: str, start: DateLike, end: DateLike, timeframe: str = "15m"
     ) -> pd.DataFrame:
         if self.cache is not None:
-            return self.cache.get_ohlcv(symbol, timeframe, start, end)
+            return self.cache.get_ohlcv(symbol, timeframe, start, end, market_adapter=self.market_adapter)
         df = self.market_adapter.get_ohlcv(symbol, timeframe, bars=self.config["fallback_bars"])
         return self._filter_range(df, start, end)
 
@@ -170,7 +170,9 @@ class HistoricalReplayFeed(DataFeed):
 
     def _fetch_symbol_history(self, symbol: str, timeframe: str) -> pd.DataFrame:
         if self.cache is not None:
-            return self.cache.get_ohlcv(symbol, timeframe, self.start_date, self.end_date)
+            return self.cache.get_ohlcv(
+                symbol, timeframe, self.start_date, self.end_date, market_adapter=self.market_adapter
+            )
         df = self.market_adapter.get_ohlcv(symbol, timeframe, bars=self.config["fallback_bars"])
         return self._filter_range(df, self.start_date, self.end_date)
 

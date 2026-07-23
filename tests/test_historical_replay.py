@@ -12,7 +12,7 @@ class _StubCache:
     def __init__(self, data):
         self.data = data
 
-    def get_ohlcv(self, symbol, timeframe, start, end):
+    def get_ohlcv(self, symbol, timeframe, start, end, market_adapter=None):
         return self.data[symbol]
 
 

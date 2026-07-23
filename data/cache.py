@@ -1,4 +1,5 @@
-"""SQLite-backed OHLCV cache, backed by yfinance for anything not yet cached."""
+"""SQLite-backed OHLCV cache, backfilling gaps via a caller-supplied market
+adapter (falling back to yfinance if none is given)."""
 
 import sqlite3
 import warnings
@@ -46,8 +47,14 @@ class DataCache:
         return sqlite3.connect(self.db_path)
 
     def get_ohlcv(
-        self, symbol: str, timeframe: str, start: DateLike, end: DateLike
+        self, symbol: str, timeframe: str, start: DateLike, end: DateLike, market_adapter: Any = None
     ) -> pd.DataFrame:
+        """Fetches from `market_adapter` (falling back to yfinance if none is
+        given, for backward compatibility) and backfills the SQLite cache.
+        Callers should always pass the market adapter the run actually
+        selected -- omitting it silently pulls yfinance data regardless of
+        which market/broker was chosen, which previously made picking a
+        non-yfinance adapter (e.g. Upstox) a no-op for backtest/replay modes."""
         start_ts, end_ts = self._normalize(start), self._normalize(end)
         coverage = self.get_cache_coverage(symbol, timeframe, start_ts, end_ts)
 
@@ -57,10 +64,10 @@ class DataCache:
                 return cached
 
         try:
-            fresh = self._download(symbol, timeframe, start_ts, end_ts)
+            fresh = self._download(symbol, timeframe, start_ts, end_ts, market_adapter)
         except Exception as exc:
             warnings.warn(
-                f"yfinance download failed for {symbol}/{timeframe} ({exc}); "
+                f"Historical data download failed for {symbol}/{timeframe} ({exc}); "
                 "returning cached data only"
             )
             cached = self._query_cache(symbol, timeframe, start_ts, end_ts)
@@ -137,14 +144,31 @@ class DataCache:
             "coverage_pct": coverage_pct,
         }
 
-    @staticmethod
-    def _download(symbol: str, timeframe: str, start: DateLike, end: DateLike) -> pd.DataFrame:
+    @classmethod
+    def _download(
+        cls, symbol: str, timeframe: str, start: DateLike, end: DateLike, market_adapter: Any = None
+    ) -> pd.DataFrame:
+        if market_adapter is not None:
+            bars = cls._expected_bar_count(start, end, timeframe)
+            df = market_adapter.get_ohlcv(symbol, timeframe, bars=bars)
+            return cls._filter_range(df, start, end)
+
         df = yf.download(
             symbol, start=start, end=end, interval=timeframe, progress=False, auto_adjust=True
         )
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
+
+    @staticmethod
+    def _filter_range(df: pd.DataFrame, start: DateLike, end: DateLike) -> pd.DataFrame:
+        start_ts, end_ts = pd.Timestamp(start), pd.Timestamp(end)
+        if df.index.tz is not None:
+            if start_ts.tz is None:
+                start_ts = start_ts.tz_localize(df.index.tz)
+            if end_ts.tz is None:
+                end_ts = end_ts.tz_localize(df.index.tz)
+        return df[(df.index >= start_ts) & (df.index <= end_ts)]
 
     @staticmethod
     def _expected_bar_count(start: pd.Timestamp, end: pd.Timestamp, timeframe: str) -> int:

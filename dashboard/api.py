@@ -430,7 +430,7 @@ class RunManager:
         data = {}
         for symbol in symbols:
             if self.cache is not None:
-                df = self.cache.get_ohlcv(symbol, timeframe, start_date, end_date)
+                df = self.cache.get_ohlcv(symbol, timeframe, start_date, end_date, market_adapter=market)
             else:
                 df = market.get_ohlcv(symbol, timeframe, bars=5000)
                 df = self._filter_range(df, start_date, end_date)

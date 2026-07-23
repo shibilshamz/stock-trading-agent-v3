@@ -261,7 +261,7 @@ class HistoricalBatchFeed(DataFeed):
 
     def get_historical(self, symbol: str, start: DateLike, end: DateLike, timeframe: str = "15m") -> pd.DataFrame:
         if self.cache is not None:
-            return self.cache.get_ohlcv(symbol, timeframe, start, end)
+            return self.cache.get_ohlcv(symbol, timeframe, start, end, market_adapter=self.market_adapter)
         df = self.market_adapter.get_ohlcv(symbol, timeframe, bars=self.config["fallback_bars"])
         return self._filter_range(df, start, end)
 
@@ -283,7 +283,7 @@ class HistoricalBatchFeed(DataFeed):
 
     def _load_symbol_data(self, symbol: str, timeframe: str, start_date: DateLike, end_date: DateLike) -> pd.DataFrame:
         if self.cache is not None:
-            return self.cache.get_ohlcv(symbol, timeframe, start_date, end_date)
+            return self.cache.get_ohlcv(symbol, timeframe, start_date, end_date, market_adapter=self.market_adapter)
         df = self.market_adapter.get_ohlcv(symbol, timeframe, bars=self.config["fallback_bars"])
         return self._filter_range(df, start_date, end_date)
 
