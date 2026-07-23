@@ -1,5 +1,7 @@
 .env
 *.db
+data/upstox_token.json
+data/upstox_instruments.json
 data/reports/
 __pycache__/
 *.pyc

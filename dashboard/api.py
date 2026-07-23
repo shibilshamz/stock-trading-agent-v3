@@ -22,10 +22,11 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import markets.upstox_auth as upstox_auth
 from alerts.telegram_bot import TelegramBot
 from core.backtest_runner import BacktestRunner
 from core.registry import (
@@ -687,6 +688,42 @@ def api_strategies() -> List[Dict[str, str]]:
 @app.get("/api/modes")
 def api_modes() -> List[str]:
     return MODES
+
+
+@app.get("/api/upstox/login")
+def upstox_login() -> RedirectResponse:
+    load_dotenv()
+    client_id = os.environ.get("UPSTOX_API_KEY")
+    redirect_uri = os.environ.get("UPSTOX_REDIRECT_URI")
+    if not client_id or not redirect_uri:
+        raise HTTPException(
+            status_code=400,
+            detail="UPSTOX_API_KEY / UPSTOX_REDIRECT_URI not configured in .env",
+        )
+    return RedirectResponse(upstox_auth.build_login_url(client_id, redirect_uri))
+
+
+@app.get("/api/upstox/callback")
+def upstox_callback(code: Optional[str] = Query(None), error: Optional[str] = Query(None)) -> RedirectResponse:
+    if error:
+        raise HTTPException(status_code=400, detail=f"Upstox login failed: {error}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing 'code' query parameter from Upstox redirect")
+
+    load_dotenv()
+    client_id = os.environ.get("UPSTOX_API_KEY")
+    client_secret = os.environ.get("UPSTOX_API_SECRET")
+    redirect_uri = os.environ.get("UPSTOX_REDIRECT_URI")
+    try:
+        upstox_auth.exchange_code(code, client_id, client_secret, redirect_uri)
+    except upstox_auth.UpstoxAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse("/")
+
+
+@app.get("/api/upstox/status")
+def upstox_status() -> Dict[str, Any]:
+    return upstox_auth.get_status()
 
 
 @app.get("/api/strategies/{code}/parameters")

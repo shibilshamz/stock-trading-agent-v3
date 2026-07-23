@@ -273,6 +273,14 @@
     }
   }
 
+  function renderUpstoxStatus(status) {
+    const pill = el("upstox-status");
+    pill.textContent = status.connected ? "Connected" : "Not connected";
+    pill.className = "value " + (status.connected ? "pnl-positive" : "pnl-negative");
+    el("upstox-expires").textContent = status.expires_at ? new Date(status.expires_at).toLocaleString() : "-";
+    el("upstox-connect-btn").textContent = status.connected ? "Reconnect Upstox" : "Connect Upstox";
+  }
+
   let equityChart = null;
   function renderEquityChart(equityCurve) {
     const canvas = el("equity-chart");
@@ -336,12 +344,18 @@
     renderBacktestResults(results);
   }
 
+  async function refreshUpstoxStatus() {
+    const status = await apiFetch("/api/upstox/status");
+    renderUpstoxStatus(status);
+  }
+
   async function refreshAll() {
     await Promise.all([
       refreshStatus().catch((err) => console.error("status refresh failed:", err)),
       refreshPositions().catch((err) => console.error("positions refresh failed:", err)),
       refreshTrades().catch((err) => console.error("trades refresh failed:", err)),
       refreshBacktestResults().catch((err) => console.error("backtest results refresh failed:", err)),
+      refreshUpstoxStatus().catch((err) => console.error("upstox status refresh failed:", err)),
     ]);
   }
 

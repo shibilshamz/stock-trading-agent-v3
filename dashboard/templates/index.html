@@ -14,6 +14,18 @@
   </header>
 
   <main>
+    <section id="upstox-panel" class="panel">
+      <h2>Upstox Connection</h2>
+      <div class="status-grid">
+        <div><span class="label">Status</span><span id="upstox-status" class="value">-</span></div>
+        <div><span class="label">Token Expires</span><span id="upstox-expires" class="value">-</span></div>
+      </div>
+      <div class="button-row">
+        <a id="upstox-connect-btn" class="btn btn-primary" href="/api/upstox/login">Connect Upstox</a>
+      </div>
+      <p class="hint">Upstox access tokens expire daily at 03:30 IST -- reconnect each trading day.</p>
+    </section>
+
     <section id="control-panel" class="panel">
       <h2>Run Configuration</h2>
       <div class="form-grid">
