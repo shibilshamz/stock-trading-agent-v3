@@ -101,11 +101,20 @@ class NSEAdapter(MarketAdapter):
         )
         return scores.sort_values(ascending=False).head(top_n).index.tolist()
 
-    def get_ohlcv(self, symbol: str, timeframe: str = "15m", bars: int = 100) -> pd.DataFrame:
-        period = self._resolve_period(timeframe, bars)
-        df = yf.download(
-            symbol, period=period, interval=timeframe, progress=False, auto_adjust=True
-        )
+    def get_ohlcv(
+        self, symbol: str, timeframe: str = "15m", bars: int = 100, end: Optional[datetime] = None
+    ) -> pd.DataFrame:
+        if end is not None:
+            end_ts = pd.Timestamp(end)
+            start_ts = end_ts - pd.Timedelta(days=self._resolve_days(timeframe, bars))
+            df = yf.download(
+                symbol, start=start_ts, end=end_ts, interval=timeframe, progress=False, auto_adjust=True
+            )
+        else:
+            period = self._resolve_period(timeframe, bars)
+            df = yf.download(
+                symbol, period=period, interval=timeframe, progress=False, auto_adjust=True
+            )
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         df = df.rename(columns=str.lower)[["open", "high", "low", "close", "volume"]]
@@ -180,3 +189,14 @@ class NSEAdapter(MarketAdapter):
         if bars <= 500:
             return "2y"
         return "5y"
+
+    @staticmethod
+    def _resolve_days(timeframe: str, bars: int) -> int:
+        """Same intent as _resolve_period, expressed as a day count for use
+        with an explicit end-anchored start date instead of yfinance's
+        relative-to-now `period` shorthand."""
+        intraday_max_days = {"1m": 7, "5m": 60, "15m": 60, "1h": 730}
+        if timeframe in intraday_max_days:
+            return intraday_max_days[timeframe]
+        trading_days = max(bars, 1)
+        return int(trading_days * 1.6) + 5  # pad for weekends/holidays

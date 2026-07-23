@@ -55,6 +55,27 @@ def test_get_ohlcv_normalizes_columns_and_respects_bars(monkeypatch):
     assert len(df) == 4
 
 
+def test_get_ohlcv_passes_explicit_start_end_when_end_given(monkeypatch):
+    """Without an explicit end-anchored start/end, yfinance's `period=` shorthand
+    is always relative to "now" -- so a caller asking for a past window (e.g.
+    DataCache backfilling a specific backtest date range) would silently get
+    recent data instead."""
+    captured = {}
+
+    def fake_download(symbol, **kwargs):
+        captured.update(kwargs)
+        return _make_ohlcv_df(periods=5)
+
+    monkeypatch.setattr(nse_adapter_module.yf, "download", fake_download)
+
+    adapter = NSEAdapter()
+    adapter.get_ohlcv("RELIANCE.NS", timeframe="15m", bars=25, end=real_datetime(2026, 2, 23))
+
+    assert "period" not in captured
+    assert captured["end"] == pd.Timestamp(real_datetime(2026, 2, 23))
+    assert captured["start"] < captured["end"]
+
+
 # -- get_universe -----------------------------------------------------------
 
 

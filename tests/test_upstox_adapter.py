@@ -156,6 +156,28 @@ def test_get_ohlcv_trims_to_requested_bars(monkeypatch, adapter):
     assert list(result["close"]) == [7, 8, 9]
 
 
+def test_get_ohlcv_anchors_window_to_end_param_not_today(monkeypatch, adapter):
+    """DataCache relies on get_ohlcv(..., end=...) to fetch a specific past
+    window -- without this, bars=N always anchors to "today", so a backtest
+    asking for e.g. Jan-Feb 2026 data would silently get June-July instead."""
+    adapter._instrument_map = {"RELIANCE": "NSE_EQ|X"}
+    captured = {}
+
+    def fake_fetch(instrument_key, unit, interval, start_date, end_date):
+        captured["start"] = start_date
+        captured["end"] = end_date
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+    monkeypatch.setattr(adapter, "_fetch_candles", fake_fetch)
+
+    from datetime import date
+
+    adapter.get_ohlcv("RELIANCE.NS", timeframe="15m", bars=25, end=date(2026, 2, 23))
+
+    assert captured["end"] <= date(2026, 2, 23)
+    assert captured["start"] < captured["end"]
+
+
 def test_get_ohlcv_returns_empty_frame_when_no_candles(monkeypatch, adapter):
     adapter._instrument_map = {"RELIANCE": "NSE_EQ|X"}
     monkeypatch.setattr(

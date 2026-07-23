@@ -61,8 +61,13 @@ class MarketAdapter(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_ohlcv(self, symbol: str, timeframe: str = "15m", bars: int = 100) -> pd.DataFrame:
-        """Return historical OHLCV bars for a symbol as a DataFrame."""
+    def get_ohlcv(
+        self, symbol: str, timeframe: str = "15m", bars: int = 100, end: Optional[datetime] = None
+    ) -> pd.DataFrame:
+        """Return the `bars` most recent OHLCV bars as of `end` (defaults to
+        now) for a symbol as a DataFrame. `end` lets a caller anchor the
+        window somewhere other than "now" -- e.g. DataCache filling a
+        specific historical date range for a backtest."""
         raise NotImplementedError
 
     @abstractmethod

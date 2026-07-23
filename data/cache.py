@@ -150,7 +150,7 @@ class DataCache:
     ) -> pd.DataFrame:
         if market_adapter is not None:
             bars = cls._expected_bar_count(start, end, timeframe)
-            df = market_adapter.get_ohlcv(symbol, timeframe, bars=bars)
+            df = market_adapter.get_ohlcv(symbol, timeframe, bars=bars, end=end)
             return cls._filter_range(df, start, end)
 
         df = yf.download(

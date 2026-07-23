@@ -17,8 +17,8 @@ class _StubAdapter:
         self.df = df
         self.calls = []
 
-    def get_ohlcv(self, symbol, timeframe, bars=100):
-        self.calls.append((symbol, timeframe, bars))
+    def get_ohlcv(self, symbol, timeframe, bars=100, end=None):
+        self.calls.append((symbol, timeframe, bars, end))
         return self.df
 
 

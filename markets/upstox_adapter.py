@@ -118,11 +118,13 @@ class UpstoxAdapter(MarketAdapter):
         )
         return scores.sort_values(ascending=False).head(top_n).index.tolist()
 
-    def get_ohlcv(self, symbol: str, timeframe: str = "15m", bars: int = 100) -> pd.DataFrame:
+    def get_ohlcv(
+        self, symbol: str, timeframe: str = "15m", bars: int = 100, end: Optional[datetime] = None
+    ) -> pd.DataFrame:
         unit, interval, max_window_days = self._TIMEFRAME_MAP.get(timeframe, ("minutes", 15, 30))
         instrument_key = self._instrument_key(symbol)
 
-        end_date = date.today()
+        end_date = pd.Timestamp(end).date() if end is not None else date.today()
         start_date = end_date - timedelta(days=self._estimate_span_days(timeframe, bars))
 
         frames = []
