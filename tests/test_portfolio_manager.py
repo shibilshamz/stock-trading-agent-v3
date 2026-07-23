@@ -154,6 +154,27 @@ def test_close_trade_updates_row_and_removes_position(temp_db, bare_run):
     assert position is None
 
 
+def test_close_trade_updates_strategy_runs_summary(temp_db, bare_run):
+    run_manager, run = bare_run
+    _open_position(run_manager, run)
+
+    run_manager._close_position(run, "X.NS", 110.0, datetime(2026, 7, 17, 11, 0), "TAKE_PROFIT")
+
+    conn = sqlite3.connect(temp_db)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM strategy_runs WHERE run_id = ?", (run["run_id"],)).fetchone()
+    conn.close()
+
+    # Summary must be persisted as trades close, not only when the run stops --
+    # otherwise a still-"running" row stays stuck at zero if the process restarts.
+    assert row["status"] == "running"
+    assert row["total_trades"] == 1
+    assert row["winning_trades"] == 1
+    assert row["losing_trades"] == 0
+    assert row["net_pnl"] == 100.0
+    assert row["win_rate"] == 100.0
+
+
 # -- get_open_positions -----------------------------------------------------------
 
 

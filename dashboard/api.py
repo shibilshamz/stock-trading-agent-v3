@@ -405,6 +405,7 @@ class RunManager:
 
         self._close_trade_row(pos["trade_id"], trade)
         self._delete_position_row(pos["trade_id"])
+        self._update_run_summary(run)
 
     def _execute_fill(self, run: Dict[str, Any], symbol: str, side: str, quantity: int, bar: Bar):
         """Returns (price, quantity) for a fill. Paper/live route through the
@@ -477,6 +478,23 @@ class RunManager:
             conn.close()
 
     def _finalize_strategy_run(self, run: Dict[str, Any]) -> None:
+        self._update_run_summary(run)
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE strategy_runs SET status = ?, end_time = CURRENT_TIMESTAMP WHERE run_id = ?",
+                (run["status"], run["run_id"]),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _update_run_summary(self, run: Dict[str, Any]) -> None:
+        """Persists total/winning/losing trade counts and P&L to the run's
+        strategy_runs row. Called after every trade close (not just on stop)
+        so the summary reflects reality even if the process restarts mid-run
+        -- otherwise a still-"running" row would be stuck showing zeros for
+        trades that already closed in a prior process lifetime."""
         trades = run.get("trades", [])
         winners = [t for t in trades if t["pnl"] > 0]
         gross_pnl = round(sum(t["pnl"] for t in trades), 2)
@@ -486,11 +504,10 @@ class RunManager:
         try:
             conn.execute(
                 """UPDATE strategy_runs
-                   SET status = ?, end_time = CURRENT_TIMESTAMP, total_trades = ?,
-                       winning_trades = ?, losing_trades = ?, gross_pnl = ?, net_pnl = ?, win_rate = ?
+                   SET total_trades = ?, winning_trades = ?, losing_trades = ?,
+                       gross_pnl = ?, net_pnl = ?, win_rate = ?
                    WHERE run_id = ?""",
                 (
-                    run["status"],
                     len(trades),
                     len(winners),
                     len(trades) - len(winners),
