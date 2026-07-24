@@ -15,6 +15,7 @@ validated.
 
 import gzip
 import json
+import logging
 import random
 import uuid
 from datetime import date, datetime, timedelta
@@ -28,6 +29,8 @@ from zoneinfo import ZoneInfo
 from markets.base import MarketAdapter, Order, OrderResult
 from markets.nse_adapter import NSEAdapter
 from markets.upstox_auth import get_access_token
+
+logger = logging.getLogger("upstox_adapter")
 
 IST = ZoneInfo("Asia/Kolkata")
 BASE_URL = "https://api.upstox.com"
@@ -56,14 +59,17 @@ class UpstoxAdapter(MarketAdapter):
         "universe_weights": {"gap": 0.4, "volume": 0.3, "atr": 0.3},
     }
 
-    # timeframe -> (unit, interval, max days per request) per Upstox v3 limits:
-    # 1-15min candles: 1 month per request; 30min/1h: 1 quarter; 1d: effectively unbounded.
+    # timeframe -> (unit, interval, max days per request) per Upstox v3 limits.
+    # Docs describe these as "1 month" / "1 quarter" per request, but the API
+    # actually rejects a request spanning the full 30/90 calendar days with
+    # UDAPI1148 "Invalid date range" -- confirmed empirically that 29/89 days
+    # succeeds where 30/90 fails, so these are shaved down by one day.
     _TIMEFRAME_MAP: Dict[str, Tuple[str, int, int]] = {
-        "1m": ("minutes", 1, 30),
-        "5m": ("minutes", 5, 30),
-        "15m": ("minutes", 15, 30),
-        "30m": ("minutes", 30, 90),
-        "1h": ("hours", 1, 90),
+        "1m": ("minutes", 1, 29),
+        "5m": ("minutes", 5, 29),
+        "15m": ("minutes", 15, 29),
+        "30m": ("minutes", 30, 89),
+        "1h": ("hours", 1, 89),
         "1d": ("days", 1, 3650),
     }
 
@@ -131,7 +137,15 @@ class UpstoxAdapter(MarketAdapter):
         window_start = start_date
         while window_start <= end_date:
             window_end = min(window_start + timedelta(days=max_window_days - 1), end_date)
-            frames.append(self._fetch_candles(instrument_key, unit, interval, window_start, window_end))
+            try:
+                frames.append(self._fetch_candles(instrument_key, unit, interval, window_start, window_end))
+            except httpx.HTTPStatusError as exc:
+                # One bad chunk (rejected date range, a data gap, a transient
+                # error) shouldn't discard every other chunk already fetched
+                # in this call -- skip it and keep going.
+                logger.warning(
+                    "Upstox candle fetch failed for %s %s->%s: %s", symbol, window_start, window_end, exc
+                )
             window_start = window_end + timedelta(days=1)
 
         if not frames or all(f.empty for f in frames):

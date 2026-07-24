@@ -2,8 +2,9 @@
 
 import gzip
 import json
-from datetime import datetime as real_datetime
+from datetime import datetime as real_datetime, timedelta
 
+import httpx
 import pandas as pd
 import pytest
 from zoneinfo import ZoneInfo
@@ -176,6 +177,54 @@ def test_get_ohlcv_anchors_window_to_end_param_not_today(monkeypatch, adapter):
 
     assert captured["end"] <= date(2026, 2, 23)
     assert captured["start"] < captured["end"]
+
+
+def test_chunk_windows_stay_within_upstox_29_day_limit(adapter):
+    """Upstox's v3 historical-candle API rejects (UDAPI1148 "Invalid date
+    range") a request spanning the full 30 calendar days it documents as
+    the limit for 1-15min candles -- confirmed empirically that 29 days
+    succeeds where 30 fails. Regression guard against reintroducing the
+    off-by-one that silently discarded a whole year's backtest data."""
+    from datetime import date
+
+    unit, interval, max_window_days = adapter._TIMEFRAME_MAP["15m"]
+    assert max_window_days == 29
+
+    window_start = date(2026, 2, 19)
+    window_end = min(window_start + timedelta(days=max_window_days - 1), date(2026, 12, 31))
+    assert (window_end - window_start).days == 28  # 29 calendar days inclusive
+
+
+def test_get_ohlcv_skips_failed_chunk_and_keeps_other_chunks(monkeypatch, adapter):
+    """A single chunk's HTTP failure (bad date range, transient error, etc.)
+    must not discard every other chunk already fetched in the same call --
+    that's exactly what silently zeroed out a full year's backtest data."""
+    adapter._instrument_map = {"RELIANCE": "NSE_EQ|X"}
+    good_df = pd.DataFrame(
+        {"open": [1], "high": [1], "low": [1], "close": [1], "volume": [1]},
+        index=pd.DatetimeIndex(["2026-01-01"]),
+    )
+
+    call_count = {"n": 0}
+
+    def flaky_fetch(instrument_key, unit, interval, start_date, end_date):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            request = httpx.Request("GET", "https://api.upstox.com/x")
+            response = httpx.Response(400, request=request, text="Invalid date range")
+            raise httpx.HTTPStatusError("400 Bad Request", request=request, response=response)
+        return good_df
+
+    monkeypatch.setattr(adapter, "_fetch_candles", flaky_fetch)
+    adapter.config["universe_symbols"] = None  # unrelated, keeps defaults explicit
+
+    from datetime import date as date_cls
+
+    # bars large enough that _estimate_span_days spans multiple 29-day chunks
+    result = adapter.get_ohlcv("RELIANCE.NS", timeframe="15m", bars=2000, end=date_cls(2026, 7, 23))
+
+    assert call_count["n"] > 2  # multiple chunks were attempted
+    assert not result.empty  # the other, successful chunks were still returned
 
 
 def test_get_ohlcv_returns_empty_frame_when_no_candles(monkeypatch, adapter):
