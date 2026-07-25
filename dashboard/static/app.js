@@ -53,6 +53,25 @@
     select.innerHTML = modes.map((m) => `<option value="${m}">${m}</option>`).join("");
   }
 
+  // Repopulated whenever the selected market changes, since each market/data
+  // source supports a different set of candle intervals.
+  async function populateTimeframes() {
+    const marketCode = el("market-select").value;
+    const select = el("timeframe-select");
+    if (!marketCode) {
+      select.innerHTML = "";
+      return;
+    }
+    try {
+      const timeframes = await apiFetch(`/api/markets/${encodeURIComponent(marketCode)}/timeframes`);
+      select.innerHTML = timeframes.map((tf) => `<option value="${tf}">${tf}</option>`).join("");
+      if (timeframes.includes("15m")) select.value = "15m"; // sensible default
+    } catch (err) {
+      select.innerHTML = "";
+      showMessage(`Could not load timeframes: ${err.message}`, true);
+    }
+  }
+
   async function loadDefaultParameters() {
     const code = el("strategy-select").value;
     if (!code) return;
@@ -95,6 +114,9 @@
       strategy: el("strategy-select").value,
       mode,
     };
+
+    const timeframe = el("timeframe-select").value;
+    if (timeframe) payload.timeframe = timeframe;
 
     const symbols = parseSymbols();
     if (symbols) payload.symbols = symbols;
@@ -371,6 +393,9 @@
   async function init() {
     el("mode-select").addEventListener("change", updateModeVisibility);
     el("strategy-select").addEventListener("change", loadDefaultParameters);
+    el("market-select").addEventListener("change", () => {
+      populateTimeframes().catch((err) => showMessage(`Failed to load timeframes: ${err.message}`, true));
+    });
     el("run-btn").addEventListener("click", handleRun);
     el("kill-switch-btn").addEventListener("click", handleStop);
     el("trades-filter-btn").addEventListener("click", () => {
@@ -380,6 +405,7 @@
 
     try {
       await Promise.all([populateMarkets(), populateStrategies(), populateModes()]);
+      await populateTimeframes(); // after markets, so it reads the selected market
     } catch (err) {
       showMessage(`Failed to load run configuration: ${err.message}`, true);
     }

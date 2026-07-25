@@ -153,7 +153,7 @@ class PaperFeed(DataFeed):
     @staticmethod
     def _estimate_bars(start: datetime, end: datetime, timeframe: str) -> int:
         span_days = max((end - start).days, 1)
-        minutes_per_bar = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+        minutes_per_bar = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
         if timeframe in minutes_per_bar:
             bars_per_day = TRADING_MINUTES_PER_DAY // minutes_per_bar[timeframe]
             return max(span_days * bars_per_day, 2)

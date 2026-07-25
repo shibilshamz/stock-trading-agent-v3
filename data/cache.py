@@ -11,7 +11,7 @@ import pandas as pd
 import yfinance as yf
 
 TRADING_MINUTES_PER_DAY = 375  # NSE session: 09:15-15:30
-MINUTES_PER_BAR = {"1m": 1, "5m": 5, "15m": 15, "1h": 60}
+MINUTES_PER_BAR = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
 
 DateLike = Union[str, datetime, pd.Timestamp]
 

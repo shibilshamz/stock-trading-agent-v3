@@ -37,6 +37,7 @@ class BacktestRunner:
         start_date: DateLike,
         end_date: DateLike,
         parameters: Optional[Dict[str, Any]] = None,
+        timeframe: Optional[str] = None,
     ) -> str:
         strategy = get_strategy(strategy_code)
         market = get_market(market_code)
@@ -46,7 +47,12 @@ class BacktestRunner:
         # reuses this same config, so parameters flow through either way.
         strategy.on_init(config=parameters or {}, market_adapter=market)
 
-        feed = HistoricalBatchFeed(market_adapter=market, cache=self.cache, config=self.config["feed_config"])
+        # A caller-supplied timeframe overrides the feed's default; omitting it
+        # leaves HistoricalBatchFeed on its own "15m" default (backward compatible).
+        feed_config = dict(self.config["feed_config"])
+        if timeframe:
+            feed_config["timeframe"] = timeframe
+        feed = HistoricalBatchFeed(market_adapter=market, cache=self.cache, config=feed_config)
         results = feed.run_backtest(strategy, symbols, start_date, end_date)
         results["market"] = market_code
 

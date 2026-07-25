@@ -100,6 +100,7 @@ class RunRequest(BaseModel):
     symbols: Optional[List[str]] = None
     date_range: Optional[Dict[str, str]] = None
     replay_speed: Optional[float] = 1.0
+    timeframe: Optional[str] = None
 
 
 class RunAlreadyActiveError(Exception):
@@ -153,12 +154,27 @@ class RunManager:
             market = get_market(request.market)
             symbols = request.symbols or market.get_universe(top_n=self.config["default_universe_size"])
             parameters = request.parameters or {}
+            timeframe = self._resolve_timeframe(request.timeframe, market)
 
             if request.mode == "backtest":
-                return self._run_backtest(request, symbols, parameters)
+                return self._run_backtest(request, symbols, parameters, timeframe)
             if request.mode in ("paper", "live", "historical_replay"):
-                return self._start_continuous_run(request, market, symbols, parameters)
+                return self._start_continuous_run(request, market, symbols, parameters, timeframe)
             raise ValueError(f"Unsupported mode: {request.mode!r}. Expected one of {MODES}.")
+
+    def _resolve_timeframe(self, requested: Optional[str], market: Any) -> str:
+        """Resolve the run's timeframe: the requested one if the selected market
+        supports it, otherwise the configured default. Raises ValueError on an
+        explicitly requested timeframe the market can't serve."""
+        default_tf = self.config["timeframe"]
+        supported = market.get_supported_timeframes()
+        timeframe = requested or default_tf
+        if timeframe not in supported:
+            raise ValueError(
+                f"Timeframe {timeframe!r} not supported by market {market.code!r}. "
+                f"Supported: {supported}"
+            )
+        return timeframe
 
     def stop_run(self, run_id: str) -> Dict[str, Any]:
         with self._lock:
@@ -209,14 +225,17 @@ class RunManager:
 
     # -- backtest mode ------------------------------------------------------
 
-    def _run_backtest(self, request: RunRequest, symbols: List[str], parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def _run_backtest(
+        self, request: RunRequest, symbols: List[str], parameters: Dict[str, Any], timeframe: str
+    ) -> Dict[str, Any]:
         date_range = request.date_range or {}
         start_date, end_date = date_range.get("start_date"), date_range.get("end_date")
         if not start_date or not end_date:
             raise ValueError("backtest mode requires date_range.start_date and date_range.end_date")
 
         run_id = self._backtest_runner.run(
-            request.strategy, request.market, symbols, start_date, end_date, parameters=parameters
+            request.strategy, request.market, symbols, start_date, end_date,
+            parameters=parameters, timeframe=timeframe,
         )
         results = self._backtest_runner.get_results(run_id) or {}
         self._run = {
@@ -243,7 +262,7 @@ class RunManager:
     # -- paper / live / historical_replay modes ------------------------------
 
     def _start_continuous_run(
-        self, request: RunRequest, market: Any, symbols: List[str], parameters: Dict[str, Any]
+        self, request: RunRequest, market: Any, symbols: List[str], parameters: Dict[str, Any], timeframe: str
     ) -> Dict[str, Any]:
         strategy = get_strategy(request.strategy)
         run_id = self._generate_run_id(request.mode, request.strategy, request.market)
@@ -260,7 +279,7 @@ class RunManager:
             # historical_batch.py enforces for one-shot backtests. Wiring the
             # real market adapter in here would leak live/future data (or, for
             # symbols that only exist in test fixtures, hit yfinance directly).
-            replay_view = self._build_replay_view(symbols, self.config["timeframe"], start_date, end_date, market)
+            replay_view = self._build_replay_view(symbols, timeframe, start_date, end_date, market)
             strategy.on_init(config=parameters, market_adapter=replay_view)
 
             feed = HistoricalReplayFeed(
@@ -269,11 +288,15 @@ class RunManager:
                 end_date=end_date,
                 speed_multiplier=request.replay_speed or 1.0,
                 cache=self.cache,
+                config={"timeframe": timeframe},
             )
         else:  # paper, live -- both execute through the same paper-fill mechanism;
             # there is no live broker integration in this system yet.
             strategy.on_init(config=parameters, market_adapter=market)
-            feed = data_feed_registry.create("paper", market_adapter=market, paper_balance=self.config["paper_balance"])
+            feed = data_feed_registry.create(
+                "paper", market_adapter=market, paper_balance=self.config["paper_balance"],
+                config={"timeframe": timeframe},
+            )
 
         run = {
             "run_id": run_id,
@@ -678,6 +701,15 @@ def index() -> FileResponse:
 @app.get("/api/markets")
 def api_markets() -> List[Dict[str, str]]:
     return [{"code": code, "name": market_registry.create(code).name} for code in market_registry.list_available()]
+
+
+@app.get("/api/markets/{code}/timeframes")
+def api_market_timeframes(code: str) -> List[str]:
+    try:
+        market = market_registry.create(code)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No market registered under code {code!r}")
+    return market.get_supported_timeframes()
 
 
 @app.get("/api/strategies")
