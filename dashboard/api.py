@@ -22,7 +22,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -691,11 +691,22 @@ if (DASHBOARD_DIR / "static").exists():
 
 
 @app.get("/")
-def index() -> FileResponse:
+def index() -> HTMLResponse:
     index_path = DASHBOARD_DIR / "templates" / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail="Dashboard UI not built yet (dashboard/templates/index.html missing).")
-    return FileResponse(index_path)
+    # Cache-bust static assets: stamp the URLs with a version derived from the
+    # newest of app.js/style.css mtimes, so a redeploy that changes either one
+    # forces browsers to fetch the new file instead of serving a stale cache.
+    static_dir = DASHBOARD_DIR / "static"
+    mtimes = [
+        (static_dir / name).stat().st_mtime
+        for name in ("app.js", "style.css")
+        if (static_dir / name).exists()
+    ]
+    version = str(int(max(mtimes))) if mtimes else "0"
+    html = index_path.read_text(encoding="utf-8").replace("__ASSET_VERSION__", version)
+    return HTMLResponse(html)
 
 
 @app.get("/api/markets")
